@@ -7,8 +7,11 @@ package device
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
+	"math/big"
 	"net"
 	"os"
 	"sync"
@@ -133,6 +136,31 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 	peer.timersAnyAuthenticatedPacketTraversal()
 	peer.timersAnyAuthenticatedPacketSent()
 
+	// -------------- GFW-knocker inspired by uoosef bepass-org ----------------
+	// send some random packet before handshake
+	fmt.Println("wireguard handshake")
+
+	numPackets := randomInt(5, 10)
+	for i := 0; i < numPackets; i++ {
+		// Generate a random packet size between 10 and 40 bytes
+		packetSize := randomInt(10, 40)
+		randomPacket := make([]byte, packetSize)
+		_, err := rand.Read(randomPacket)
+		if err != nil {
+			return fmt.Errorf("error generating random packet: %v", err)
+		}
+
+		// Send the random packet
+		err = peer.SendBuffers([][]byte{randomPacket})
+		if err != nil {
+			return fmt.Errorf("error sending random packet: %v", err)
+		}
+
+		// Wait for a random duration between 10 and 50 milliseconds
+		time.Sleep(time.Duration(randomInt(10, 50)) * time.Millisecond)
+	}
+	// ---------------------------------------------------------------
+
 	err = peer.SendBuffers([][]byte{packet})
 	if err != nil {
 		peer.device.log.Errorf("%v - Failed to send handshake initiation: %v", peer, err)
@@ -141,6 +169,17 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 
 	return err
 }
+
+// ---------------- by uoosef bepass-org ------------------------------------
+func randomInt(min, max int) int {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
+	if err != nil {
+		panic(err)
+	}
+	return int(nBig.Int64()) + min
+}
+
+// --------------------------------------------------------------------------
 
 func (peer *Peer) SendHandshakeResponse() error {
 	peer.handshake.mutex.Lock()
