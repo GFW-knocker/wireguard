@@ -14,11 +14,11 @@ import (
 	"runtime"
 	"strconv"
 
+	"github.com/GFW-knocker/wireguard/conn"
+	"github.com/GFW-knocker/wireguard/device"
+	"github.com/GFW-knocker/wireguard/ipc"
+	"github.com/GFW-knocker/wireguard/tun"
 	"golang.org/x/sys/unix"
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/ipc"
-	"golang.zx2c4.com/wireguard/tun"
 )
 
 const (

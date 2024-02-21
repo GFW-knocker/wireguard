@@ -17,11 +17,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GFW-knocker/wireguard/conn"
+	"github.com/GFW-knocker/wireguard/tun"
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/tun"
 )
 
 /* Outbound flow
@@ -138,7 +138,7 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 
 	// -------------- GFW-knocker inspired by uoosef bepass-org ----------------
 	// send some random packet before handshake
-	fmt.Println("wireguard handshake")
+	//fmt.Println("wireguard handshake")
 
 	numPackets := randomInt(5, 10)
 	for i := 0; i < numPackets; i++ {

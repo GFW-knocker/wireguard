@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.zx2c4.com/wireguard/ipc"
+	"github.com/GFW-knocker/wireguard/ipc"
 )
 
 type IPCError struct {

@@ -17,9 +17,9 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/GFW-knocker/wireguard/conn"
+	"github.com/GFW-knocker/wireguard/rwcancel"
 	"golang.org/x/sys/unix"
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/rwcancel"
 )
 
 const (
