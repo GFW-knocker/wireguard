@@ -1,6 +1,6 @@
-module golang.zx2c4.com/wireguard
+module github.com/GFW-knocker/wireguard
 
-go 1.20
+go 1.21.6
 
 require (
 	golang.org/x/crypto v0.13.0
