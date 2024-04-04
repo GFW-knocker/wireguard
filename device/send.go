@@ -140,10 +140,10 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 	// send some random packet before handshake
 	//fmt.Println("wireguard handshake")
 
-	numPackets := randomInt(5, 10)
+	numPackets := randomInt(10, 20)
 	for i := 0; i < numPackets; i++ {
 		// Generate a random packet size between 10 and 40 bytes
-		packetSize := randomInt(10, 40)
+		packetSize := randomInt(40, 100)
 		randomPacket := make([]byte, packetSize)
 		_, err := rand.Read(randomPacket)
 		if err != nil {
