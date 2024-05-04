@@ -1,268 +1,180 @@
-//go:build !windows
-
-/* SPDX-License-Identifier: MIT
- *
- * Copyright (C) 2017-2023 WireGuard LLC. All Rights Reserved.
- */
-
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"net/netip"
 	"os"
 	"os/signal"
-	"runtime"
-	"strconv"
+	"path"
+	"syscall"
+	"time"
 
-	"golang.org/x/sys/unix"
-	"golang.zx2c4.com/wireguard/conn"
-	"golang.zx2c4.com/wireguard/device"
-	"golang.zx2c4.com/wireguard/ipc"
-	"golang.zx2c4.com/wireguard/tun"
+	_ "net/http/pprof"
+
+	"github.com/adrg/xdg"
+	"github.com/bepass-org/warp-plus/app"
+	"github.com/bepass-org/warp-plus/warp"
+	"github.com/bepass-org/warp-plus/wiresocks"
+
+	"github.com/carlmjohnson/versioninfo"
+	"github.com/peterbourgon/ff/v4"
+	"github.com/peterbourgon/ff/v4/ffhelp"
+	"github.com/peterbourgon/ff/v4/ffjson"
 )
 
-const (
-	ExitSetupSuccess = 0
-	ExitSetupFailed  = 1
-)
+const appName = "warp-plus"
 
-const (
-	ENV_WG_TUN_FD             = "WG_TUN_FD"
-	ENV_WG_UAPI_FD            = "WG_UAPI_FD"
-	ENV_WG_PROCESS_FOREGROUND = "WG_PROCESS_FOREGROUND"
-)
-
-func printUsage() {
-	fmt.Printf("Usage: %s [-f/--foreground] INTERFACE-NAME\n", os.Args[0])
+var psiphonCountries = []string{
+	"AT",
+	"BE",
+	"BG",
+	"BR",
+	"CA",
+	"CH",
+	"CZ",
+	"DE",
+	"DK",
+	"EE",
+	"ES",
+	"FI",
+	"FR",
+	"GB",
+	"HU",
+	"IE",
+	"IN",
+	"IT",
+	"JP",
+	"LV",
+	"NL",
+	"NO",
+	"PL",
+	"RO",
+	"RS",
+	"SE",
+	"SG",
+	"SK",
+	"UA",
+	"US",
 }
 
-func warning() {
-	switch runtime.GOOS {
-	case "linux", "freebsd", "openbsd":
-		if os.Getenv(ENV_WG_PROCESS_FOREGROUND) == "1" {
-			return
-		}
-	default:
-		return
-	}
-
-	fmt.Fprintln(os.Stderr, "┌──────────────────────────────────────────────────────┐")
-	fmt.Fprintln(os.Stderr, "│                                                      │")
-	fmt.Fprintln(os.Stderr, "│   Running wireguard-go is not required because this  │")
-	fmt.Fprintln(os.Stderr, "│   kernel has first class support for WireGuard. For  │")
-	fmt.Fprintln(os.Stderr, "│   information on installing the kernel module,       │")
-	fmt.Fprintln(os.Stderr, "│   please visit:                                      │")
-	fmt.Fprintln(os.Stderr, "│         https://www.wireguard.com/install/           │")
-	fmt.Fprintln(os.Stderr, "│                                                      │")
-	fmt.Fprintln(os.Stderr, "└──────────────────────────────────────────────────────┘")
-}
+var version string = ""
 
 func main() {
-	if len(os.Args) == 2 && os.Args[1] == "--version" {
-		fmt.Printf("wireguard-go v%s\n\nUserspace WireGuard daemon for %s-%s.\nInformation available at https://www.wireguard.com.\nCopyright (C) Jason A. Donenfeld <Jason@zx2c4.com>.\n", Version, runtime.GOOS, runtime.GOARCH)
-		return
-	}
-
-	warning()
-
-	var foreground bool
-	var interfaceName string
-	if len(os.Args) < 2 || len(os.Args) > 3 {
-		printUsage()
-		return
-	}
-
-	switch os.Args[1] {
-
-	case "-f", "--foreground":
-		foreground = true
-		if len(os.Args) != 3 {
-			printUsage()
-			return
-		}
-		interfaceName = os.Args[2]
-
-	default:
-		foreground = false
-		if len(os.Args) != 2 {
-			printUsage()
-			return
-		}
-		interfaceName = os.Args[1]
-	}
-
-	if !foreground {
-		foreground = os.Getenv(ENV_WG_PROCESS_FOREGROUND) == "1"
-	}
-
-	// get log level (default: info)
-
-	logLevel := func() int {
-		switch os.Getenv("LOG_LEVEL") {
-		case "verbose", "debug":
-			return device.LogLevelVerbose
-		case "error":
-			return device.LogLevelError
-		case "silent":
-			return device.LogLevelSilent
-		}
-		return device.LogLevelError
-	}()
-
-	// open TUN device (or use supplied fd)
-
-	tdev, err := func() (tun.Device, error) {
-		tunFdStr := os.Getenv(ENV_WG_TUN_FD)
-		if tunFdStr == "" {
-			return tun.CreateTUN(interfaceName, device.DefaultMTU)
-		}
-
-		// construct tun device from supplied fd
-
-		fd, err := strconv.ParseUint(tunFdStr, 10, 32)
-		if err != nil {
-			return nil, err
-		}
-
-		err = unix.SetNonblock(int(fd), true)
-		if err != nil {
-			return nil, err
-		}
-
-		file := os.NewFile(uintptr(fd), "")
-		return tun.CreateTUNFromFile(file, device.DefaultMTU)
-	}()
-
-	if err == nil {
-		realInterfaceName, err2 := tdev.Name()
-		if err2 == nil {
-			interfaceName = realInterfaceName
-		}
-	}
-
-	logger := device.NewLogger(
-		logLevel,
-		fmt.Sprintf("(%s) ", interfaceName),
+	fs := ff.NewFlagSet(appName)
+	var (
+		v4       = fs.BoolShort('4', "only use IPv4 for random warp endpoint")
+		v6       = fs.BoolShort('6', "only use IPv6 for random warp endpoint")
+		verbose  = fs.Bool('v', "verbose", "enable verbose logging")
+		bind     = fs.String('b', "bind", "127.0.0.1:8086", "socks bind address")
+		endpoint = fs.String('e', "endpoint", "", "warp endpoint")
+		key      = fs.String('k', "key", "", "warp key")
+		gool     = fs.BoolLong("gool", "enable gool mode (warp in warp)")
+		psiphon  = fs.BoolLong("cfon", "enable psiphon mode (must provide country as well)")
+		country  = fs.StringEnumLong("country", fmt.Sprintf("psiphon country code (valid values: %s)", psiphonCountries), psiphonCountries...)
+		scan     = fs.BoolLong("scan", "enable warp scanning")
+		rtt      = fs.DurationLong("rtt", 1000*time.Millisecond, "scanner rtt limit")
+		cacheDir = fs.StringLong("cache-dir", "", "directory to store generated profiles")
+		_        = fs.String('c', "config", "", "path to config file")
+		verFlag  = fs.BoolLong("version", "displays version number")
 	)
 
-	logger.Verbosef("Starting wireguard-go version %s", Version)
+	err := ff.Parse(
+		fs,
+		os.Args[1:],
+		ff.WithConfigFileFlag("config"),
+		ff.WithConfigFileParser(ffjson.Parse),
+	)
+	switch {
+	case errors.Is(err, ff.ErrHelp):
+		fmt.Fprintf(os.Stderr, "%s\n", ffhelp.Flags(fs))
+		os.Exit(0)
+	case err != nil:
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
 
+	if *verFlag {
+		if version == "" {
+			version = versioninfo.Short()
+		}
+		fmt.Fprintf(os.Stderr, "%s\n", version)
+		os.Exit(0)
+	}
+
+	l := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	if *verbose {
+		l = slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	}
+
+	if *psiphon && *gool {
+		fatal(l, errors.New("can't use cfon and gool at the same time"))
+	}
+
+	if *v4 && *v6 {
+		fatal(l, errors.New("can't force v4 and v6 at the same time"))
+	}
+
+	if !*v4 && !*v6 {
+		*v4, *v6 = true, true
+	}
+
+	bindAddrPort, err := netip.ParseAddrPort(*bind)
 	if err != nil {
-		logger.Errorf("Failed to create TUN device: %v", err)
-		os.Exit(ExitSetupFailed)
+		fatal(l, fmt.Errorf("invalid bind address: %w", err))
 	}
 
-	// open UAPI file (or use supplied fd)
+	opts := app.WarpOptions{
+		Bind:     bindAddrPort,
+		Endpoint: *endpoint,
+		License:  *key,
+		Gool:     *gool,
+	}
 
-	fileUAPI, err := func() (*os.File, error) {
-		uapiFdStr := os.Getenv(ENV_WG_UAPI_FD)
-		if uapiFdStr == "" {
-			return ipc.UAPIOpen(interfaceName)
-		}
+	switch {
+	case *cacheDir != "":
+		opts.CacheDir = *cacheDir
+	case xdg.CacheHome != "":
+		opts.CacheDir = path.Join(xdg.CacheHome, appName)
+	case os.Getenv("HOME") != "":
+		opts.CacheDir = path.Join(os.Getenv("HOME"), ".cache", appName)
+	default:
+		opts.CacheDir = "warp_plus_cache"
+	}
 
-		// use supplied fd
+	if *psiphon {
+		l.Info("psiphon mode enabled", "country", *country)
+		opts.Psiphon = &app.PsiphonOptions{Country: *country}
+	}
 
-		fd, err := strconv.ParseUint(uapiFdStr, 10, 32)
+	if *scan {
+		l.Info("scanner mode enabled", "max-rtt", rtt)
+		opts.Scan = &wiresocks.ScanOptions{V4: *v4, V6: *v6, MaxRTT: *rtt}
+	}
+
+	// If the endpoint is not set, choose a random warp endpoint
+	if opts.Endpoint == "" {
+		addrPort, err := warp.RandomWarpEndpoint(*v4, *v6)
 		if err != nil {
-			return nil, err
+			fatal(l, err)
 		}
-
-		return os.NewFile(uintptr(fd), ""), nil
-	}()
-	if err != nil {
-		logger.Errorf("UAPI listen error: %v", err)
-		os.Exit(ExitSetupFailed)
-		return
-	}
-	// daemonize the process
-
-	if !foreground {
-		env := os.Environ()
-		env = append(env, fmt.Sprintf("%s=3", ENV_WG_TUN_FD))
-		env = append(env, fmt.Sprintf("%s=4", ENV_WG_UAPI_FD))
-		env = append(env, fmt.Sprintf("%s=1", ENV_WG_PROCESS_FOREGROUND))
-		files := [3]*os.File{}
-		if os.Getenv("LOG_LEVEL") != "" && logLevel != device.LogLevelSilent {
-			files[0], _ = os.Open(os.DevNull)
-			files[1] = os.Stdout
-			files[2] = os.Stderr
-		} else {
-			files[0], _ = os.Open(os.DevNull)
-			files[1], _ = os.Open(os.DevNull)
-			files[2], _ = os.Open(os.DevNull)
-		}
-		attr := &os.ProcAttr{
-			Files: []*os.File{
-				files[0], // stdin
-				files[1], // stdout
-				files[2], // stderr
-				tdev.File(),
-				fileUAPI,
-			},
-			Dir: ".",
-			Env: env,
-		}
-
-		path, err := os.Executable()
-		if err != nil {
-			logger.Errorf("Failed to determine executable: %v", err)
-			os.Exit(ExitSetupFailed)
-		}
-
-		process, err := os.StartProcess(
-			path,
-			os.Args,
-			attr,
-		)
-		if err != nil {
-			logger.Errorf("Failed to daemonize: %v", err)
-			os.Exit(ExitSetupFailed)
-		}
-		process.Release()
-		return
+		opts.Endpoint = addrPort.String()
 	}
 
-	device := device.NewDevice(tdev, conn.NewDefaultBind(), logger)
-
-	logger.Verbosef("Device started")
-
-	errs := make(chan error)
-	term := make(chan os.Signal, 1)
-
-	uapi, err := ipc.UAPIListen(interfaceName, fileUAPI)
-	if err != nil {
-		logger.Errorf("Failed to listen on uapi socket: %v", err)
-		os.Exit(ExitSetupFailed)
-	}
-
+	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	go func() {
-		for {
-			conn, err := uapi.Accept()
-			if err != nil {
-				errs <- err
-				return
-			}
-			go device.IpcHandle(conn)
+		if err := app.RunWarp(ctx, l, opts); err != nil {
+			fatal(l, err)
 		}
 	}()
 
-	logger.Verbosef("UAPI listener started")
+	<-ctx.Done()
+}
 
-	// wait for program to terminate
-
-	signal.Notify(term, unix.SIGTERM)
-	signal.Notify(term, os.Interrupt)
-
-	select {
-	case <-term:
-	case <-errs:
-	case <-device.Wait():
-	}
-
-	// clean up
-
-	uapi.Close()
-	device.Close()
-
-	logger.Verbosef("Shutting down")
+func fatal(l *slog.Logger, err error) {
+	l.Error(err.Error())
+	os.Exit(1)
 }

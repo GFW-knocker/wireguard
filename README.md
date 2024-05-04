@@ -1,77 +1,108 @@
-# Go Implementation of [WireGuard](https://www.wireguard.com/)
+# Warp-Plus
 
-This is an implementation of WireGuard in Go.
+Warp-Plus is an open-source implementation of Cloudflare's Warp, enhanced with Psiphon integration for circumventing censorship. This project aims to provide a robust and cross-platform VPN solution that can use psiphon on top of warp and warp-in-warp for changing the user virtual nat location.
 
-## Usage
+## Features
 
-Most Linux kernel WireGuard users are used to adding an interface with `ip link add wg0 type wireguard`. With wireguard-go, instead simply run:
+- **Warp Integration**: Leverages Cloudflare's Warp to provide a fast and secure VPN service.
+- **Psiphon Chaining**: Integrates with Psiphon for censorship circumvention, allowing seamless access to the internet in restrictive environments.
+- **Warp in Warp Chaining**: Chaning two instances of warp together to bypass location restrictions.
+- **SOCKS5 Proxy Support**: Includes a SOCKS5 proxy for secure and private browsing.
 
-```
-$ wireguard-go wg0
-```
+## Getting Started
 
-This will create an interface and fork into the background. To remove the interface, use the usual `ip link del wg0`, or if your system does not support removing interfaces directly, you may instead remove the control socket via `rm -f /var/run/wireguard/wg0.sock`, which will result in wireguard-go shutting down.
+### Prerequisites
 
-To run wireguard-go without forking to the background, pass `-f` or `--foreground`:
+- You can download prebuilt binaries or compile it with Go (You MUST use go 1.21)
+- Basic understanding of VPN and proxy configurations
 
-```
-$ wireguard-go -f wg0
-```
+### Installation
 
-When an interface is running, you may use [`wg(8)`](https://git.zx2c4.com/wireguard-tools/about/src/man/wg.8) to configure it, as well as the usual `ip(8)` and `ifconfig(8)` commands.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/bepass-org/warp-plus.git
+   cd warp-plus
+   ```
 
-To run with more logging you may set the environment variable `LOG_LEVEL=debug`.
+2. Build the project:
+   ```bash
+   go build
+   ```
 
-## Platforms
-
-### Linux
-
-This will run on Linux; however you should instead use the kernel module, which is faster and better integrated into the OS. See the [installation page](https://www.wireguard.com/install/) for instructions.
-
-### macOS
-
-This runs on macOS using the utun driver. It does not yet support sticky sockets, and won't support fwmarks because of Darwin limitations. Since the utun driver cannot have arbitrary interface names, you must either use `utun[0-9]+` for an explicit interface name or `utun` to have the kernel select one for you. If you choose `utun` as the interface name, and the environment variable `WG_TUN_NAME_FILE` is defined, then the actual name of the interface chosen by the kernel is written to the file specified by that variable.
-
-### Windows
-
-This runs on Windows, but you should instead use it from the more [fully featured Windows app](https://git.zx2c4.com/wireguard-windows/about/), which uses this as a module.
-
-### FreeBSD
-
-This will run on FreeBSD. It does not yet support sticky sockets. Fwmark is mapped to `SO_USER_COOKIE`.
-
-### OpenBSD
-
-This will run on OpenBSD. It does not yet support sticky sockets. Fwmark is mapped to `SO_RTABLE`. Since the tun driver cannot have arbitrary interface names, you must either use `tun[0-9]+` for an explicit interface name or `tun` to have the program select one for you. If you choose `tun` as the interface name, and the environment variable `WG_TUN_NAME_FILE` is defined, then the actual name of the interface chosen by the kernel is written to the file specified by that variable.
-
-## Building
-
-This requires an installation of the latest version of [Go](https://go.dev/).
+### Usage
 
 ```
-$ git clone https://git.zx2c4.com/wireguard-go
-$ cd wireguard-go
-$ make
+NAME
+  warp-plus
+
+FLAGS
+  -4                      only use IPv4 for random warp endpoint
+  -6                      only use IPv6 for random warp endpoint
+  -v, --verbose           enable verbose logging
+  -b, --bind STRING       socks bind address (default: 127.0.0.1:8086)
+  -e, --endpoint STRING   warp endpoint
+  -k, --key STRING        warp key
+      --gool              enable gool mode (warp in warp)
+      --cfon              enable psiphon mode (must provide country as well)
+      --country STRING    psiphon country code (valid values: [AT BE BG BR CA CH CZ DE DK EE ES FI FR GB HU IE IN IT JP LV NL NO PL RO RS SE SG SK UA US]) (default: AT)
+      --scan              enable warp scanning
+      --rtt DURATION      scanner rtt limit (default: 1s)
+  -c, --config STRING     path to config file
 ```
 
-## License
+### Country Codes for Psiphon
 
-    Copyright (C) 2017-2023 WireGuard LLC. All Rights Reserved.
-    
-    Permission is hereby granted, free of charge, to any person obtaining a copy of
-    this software and associated documentation files (the "Software"), to deal in
-    the Software without restriction, including without limitation the rights to
-    use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
-    of the Software, and to permit persons to whom the Software is furnished to do
-    so, subject to the following conditions:
-    
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-    
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
+- Austria (AT)
+- Belgium (BE)
+- Bulgaria (BG)
+- Brazil (BR)
+- Canada (CA)
+- Switzerland (CH)
+- Czech Republic (CZ)
+- Germany (DE)
+- Denmark (DK)
+- Estonia (EE)
+- Spain (ES)
+- Finland (FI)
+- France (FR)
+- United Kingdom (GB)
+- Hungary (HU)
+- Ireland (IE)
+- India (IN)
+- Italy (IT)
+- Japan (JP)
+- Latvia (LV)
+- Netherlands (NL)
+- Norway (NO)
+- Poland (PL)
+- Romania (RO)
+- Serbia (RS)
+- Sweden (SE)
+- Singapore (SG)
+- Slovakia (SK)
+- Ukraine (UA)
+- United States (US)
+
+### Termux
+
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/Ptechgithub/wireguard-go/master/termux.sh)
+```
+![1](https://github.com/Ptechgithub/configs/blob/main/media/18.jpg?raw=true)
+
+- اگه حس کردی کانکت نمیشه یا خطا میده دستور `rm -rf stuff` رو بزن و مجدد warp رو وارد کن.
+- بعد از نصب برای اجرای مجدد فقط کافیه که `warp` یا `usef` یا `./warp` را وارد کنید . 
+- اگر با 1 نصب نشد و خطا گرفتید ابتدا یک بار 3 را بزنید تا `Uninstall` شود سپس عدد 2 رو انتخاب کنید یعنی Arm.
+- برای نمایش راهنما ` warp -h` را وارد کنید. 
+- ای پی و پورت `127.0.0.1:8086`پروتکل socks
+- در روش warp به warp plus مقدار account id را وارد میکنید و با این کار هر 20 ثانیه 1 GB به اکانت شما اضافه میشود. 
+- برای تغییر  لوکیشن با استفاده از سایفون از طریق منو یا به صورت دستی (برای مثال به USA  از دستور  زیر استفاده کنید) 
+- `warp --cfon --country US`
+- برای اسکن ای پی سالم وارپ از دستور `warp --scan` استفاده کنید. 
+- برای ترکیب (chain) دو کانفیگ برای تغییر لوکیشن از دستور `warp --gool` استفاده کنید. 
+
+## Acknowledgements
+
+- Cloudflare Warp
+- Psiphon
+- All contributors and supporters of this project
