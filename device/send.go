@@ -9,8 +9,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
-	"fmt"
 	"math/big"
 	"net"
 	"os"
@@ -80,10 +80,69 @@ func (elem *QueueOutboundElement) clearPointers() {
 	elem.peer = nil
 }
 
+// ---------------- by uoosef bepass-org ------------------------------------
+func randomInt(min, max int) int {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
+	if err != nil {
+		panic(err)
+	}
+	return int(nBig.Int64()) + min
+}
+
+// --------------------------------------------------------------------------
+
+func (peer *Peer) sendRandomPackets() {
+
+	numPackets := randomInt(2, 3)
+	for i := 0; i < numPackets; i++ {
+		// Generate a random packet size between 10 and 50 bytes
+		payloadSize := randomInt(10, 50)
+		randomPayload := make([]byte, payloadSize)
+		_, err2 := rand.Read(randomPayload)
+		if err2 != nil {
+			return
+		}
+
+		clist := []string{"C0", "C2", "C3", "C4", "C9", "CB", "CC", "CD", "CE", "CF"}
+		cstr := clist[randomInt(0, len(clist)-1)]
+
+		a1, _ := hex.DecodeString(cstr)
+		a2 := []byte{0x00, 0x00, 0x00, 0x01, 0x08}
+		a3 := make([]byte, 8)
+		_, err3 := rand.Read(a3)
+		if err3 != nil {
+			return
+		}
+		a4 := []byte{0x00, 0x00, 0x44, 0xD0}
+
+		finalPacket := make([]byte, 0, payloadSize+18)
+		finalPacket = append(finalPacket, a1...)
+		finalPacket = append(finalPacket, a2...)
+		finalPacket = append(finalPacket, a3...)
+		finalPacket = append(finalPacket, a4...)
+		finalPacket = append(finalPacket, randomPayload...)
+
+		// Send the random packet
+		err1 := peer.SendBuffers([][]byte{finalPacket})
+		if err1 != nil {
+			return
+		}
+
+		// Wait for a random duration between 10 and 30 milliseconds
+		time.Sleep(time.Duration(randomInt(10, 30)) * time.Millisecond)
+	}
+
+}
+
 /* Queues a keepalive if no packets are queued for peer
  */
 func (peer *Peer) SendKeepalive() {
 	if len(peer.queue.staged) == 0 && peer.isRunning.Load() {
+
+		//---------------------------
+		peer.sendRandomPackets()
+		//---------------------------
+
 		elem := peer.device.NewOutboundElement()
 		elemsContainer := peer.device.GetOutboundElementsContainer()
 		elemsContainer.elems = append(elemsContainer.elems, elem)
@@ -136,30 +195,9 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 	peer.timersAnyAuthenticatedPacketTraversal()
 	peer.timersAnyAuthenticatedPacketSent()
 
-	// -------------- GFW-knocker inspired by uoosef bepass-org ----------------
-	// send some random packet before handshake
-	//fmt.Println("wireguard handshake")
-
-	numPackets := randomInt(10, 20)
-	for i := 0; i < numPackets; i++ {
-		// Generate a random packet size between 10 and 40 bytes
-		packetSize := randomInt(40, 100)
-		randomPacket := make([]byte, packetSize)
-		_, err := rand.Read(randomPacket)
-		if err != nil {
-			return fmt.Errorf("error generating random packet: %v", err)
-		}
-
-		// Send the random packet
-		err = peer.SendBuffers([][]byte{randomPacket})
-		if err != nil {
-			return fmt.Errorf("error sending random packet: %v", err)
-		}
-
-		// Wait for a random duration between 10 and 50 milliseconds
-		time.Sleep(time.Duration(randomInt(10, 50)) * time.Millisecond)
-	}
-	// ---------------------------------------------------------------
+	// --------------------------
+	peer.sendRandomPackets()
+	//---------------------------
 
 	err = peer.SendBuffers([][]byte{packet})
 	if err != nil {
@@ -169,17 +207,6 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 
 	return err
 }
-
-// ---------------- by uoosef bepass-org ------------------------------------
-func randomInt(min, max int) int {
-	nBig, err := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
-	if err != nil {
-		panic(err)
-	}
-	return int(nBig.Int64()) + min
-}
-
-// --------------------------------------------------------------------------
 
 func (peer *Peer) SendHandshakeResponse() error {
 	peer.handshake.mutex.Lock()
