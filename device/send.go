@@ -93,17 +93,18 @@ func randomInt(min, max int) int {
 
 func (peer *Peer) sendRandomPackets() {
 
-	numPackets := randomInt(2, 3)
+	numPackets := randomInt(1, 3)
 	for i := 0; i < numPackets; i++ {
-		// Generate a random packet size between 10 and 50 bytes
-		payloadSize := randomInt(10, 50)
+		// Generate a random packet size between 10 and 30 bytes
+		payloadSize := randomInt(10, 30)
 		randomPayload := make([]byte, payloadSize)
 		_, err2 := rand.Read(randomPayload)
 		if err2 != nil {
 			return
 		}
 
-		clist := []string{"C0", "C2", "C3", "C4", "C9", "CB", "CC", "CD", "CE", "CF"}
+		// clist := []string{"C0", "C2", "C3", "C4", "C9", "CB", "CC", "CD", "CE", "CF"}
+		clist := []string{"DC", "DE", "AE", "BC", "BD", "BE"}
 		cstr := clist[randomInt(0, len(clist)-1)]
 
 		a1, _ := hex.DecodeString(cstr)
