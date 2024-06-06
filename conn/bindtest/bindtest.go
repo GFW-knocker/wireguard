@@ -107,6 +107,29 @@ func (c *ChannelBind) makeReceiveFunc(ch chan []byte) conn.ReceiveFunc {
 	}
 }
 
+// ------------ GFW knocker ------------------------------
+func (c *ChannelBind) Send_without_modify(bufs [][]byte, ep conn.Endpoint) error {
+	for _, b := range bufs {
+		select {
+		case <-c.closeSignal:
+			return net.ErrClosed
+		default:
+			bc := make([]byte, len(b))
+			copy(bc, b)
+			if ep.(ChannelEndpoint) == c.target4 {
+				*c.tx4 <- bc
+			} else if ep.(ChannelEndpoint) == c.target6 {
+				*c.tx6 <- bc
+			} else {
+				return os.ErrInvalid
+			}
+		}
+	}
+	return nil
+}
+
+// -------------------------------------------------------
+
 func (c *ChannelBind) Send(bufs [][]byte, ep conn.Endpoint) error {
 	for _, b := range bufs {
 		select {

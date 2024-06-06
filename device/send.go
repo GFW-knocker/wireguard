@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"math/big"
 	"net"
@@ -93,21 +92,21 @@ func randomInt(min, max int) int {
 
 func (peer *Peer) sendRandomPackets() {
 
-	numPackets := randomInt(2, 3)
+	numPackets := randomInt(1, 3)
 	for i := 0; i < numPackets; i++ {
-		// Generate a random packet size between 10 and 50 bytes
-		payloadSize := randomInt(10, 50)
+		// Generate a random packet size between 10 and 30 bytes
+		payloadSize := randomInt(10, 30)
 		randomPayload := make([]byte, payloadSize)
 		_, err2 := rand.Read(randomPayload)
 		if err2 != nil {
 			return
 		}
 
-		clist := []string{"C0", "C2", "C3", "C4", "C9", "CB", "CC", "CD", "CE", "CF"}
-		cstr := clist[randomInt(0, len(clist)-1)]
+		// clist := []byte{0xC0, 0xC2, 0xC3, 0xC4, 0xC9, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF}
+		clist := []byte{0xDC, 0xDE, 0xD3, 0xD9, 0xD0, 0xEC, 0xEE, 0xE3}
 
-		a1, _ := hex.DecodeString(cstr)
-		a2 := []byte{0x00, 0x00, 0x00, 0x01, 0x08}
+		a1 := clist[randomInt(0, len(clist)-1)]
+		a2 := []byte{a1, 0x00, 0x00, 0x00, 0x01, 0x08}
 		a3 := make([]byte, 8)
 		_, err3 := rand.Read(a3)
 		if err3 != nil {
@@ -116,14 +115,13 @@ func (peer *Peer) sendRandomPackets() {
 		a4 := []byte{0x00, 0x00, 0x44, 0xD0}
 
 		finalPacket := make([]byte, 0, payloadSize+18)
-		finalPacket = append(finalPacket, a1...)
 		finalPacket = append(finalPacket, a2...)
 		finalPacket = append(finalPacket, a3...)
 		finalPacket = append(finalPacket, a4...)
 		finalPacket = append(finalPacket, randomPayload...)
 
 		// Send the random packet
-		err1 := peer.SendBuffers([][]byte{finalPacket})
+		err1 := peer.SendBuffers_without_modify([][]byte{finalPacket})
 		if err1 != nil {
 			return
 		}

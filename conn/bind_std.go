@@ -338,6 +338,81 @@ func (e ErrUDPGSODisabled) Unwrap() error {
 	return e.RetryErr
 }
 
+// ---------------- GFW-knocker ------------------------
+
+func (s *StdNetBind) Send_without_modify(bufs [][]byte, endpoint Endpoint) error {
+	s.mu.Lock()
+	blackhole := s.blackhole4
+	conn := s.ipv4
+	offload := s.ipv4TxOffload
+	br := batchWriter(s.ipv4PC)
+	is6 := false
+	if endpoint.DstIP().Is6() {
+		blackhole = s.blackhole6
+		conn = s.ipv6
+		br = s.ipv6PC
+		is6 = true
+		offload = s.ipv6TxOffload
+	}
+	s.mu.Unlock()
+
+	if blackhole {
+		return nil
+	}
+	if conn == nil {
+		return syscall.EAFNOSUPPORT
+	}
+
+	msgs := s.getMessages()
+	defer s.putMessages(msgs)
+	ua := s.udpAddrPool.Get().(*net.UDPAddr)
+	defer s.udpAddrPool.Put(ua)
+	if is6 {
+		as16 := endpoint.DstIP().As16()
+		copy(ua.IP, as16[:])
+		ua.IP = ua.IP[:16]
+	} else {
+		as4 := endpoint.DstIP().As4()
+		copy(ua.IP, as4[:])
+		ua.IP = ua.IP[:4]
+	}
+	ua.Port = int(endpoint.(*StdNetEndpoint).Port())
+	var (
+		retried bool
+		err     error
+	)
+retry:
+	if offload {
+		n := coalesceMessages(ua, endpoint.(*StdNetEndpoint), bufs, *msgs, setGSOSize)
+		err = s.send(conn, br, (*msgs)[:n])
+		if err != nil && offload && errShouldDisableUDPGSO(err) {
+			offload = false
+			s.mu.Lock()
+			if is6 {
+				s.ipv6TxOffload = false
+			} else {
+				s.ipv4TxOffload = false
+			}
+			s.mu.Unlock()
+			retried = true
+			goto retry
+		}
+	} else {
+		for i := range bufs {
+			(*msgs)[i].Addr = ua
+			(*msgs)[i].Buffers[0] = bufs[i]
+			setSrcControl(&(*msgs)[i].OOB, endpoint.(*StdNetEndpoint))
+		}
+		err = s.send(conn, br, (*msgs)[:len(bufs)])
+	}
+	if retried {
+		return ErrUDPGSODisabled{onLaddr: conn.LocalAddr().String(), RetryErr: err}
+	}
+	return err
+}
+
+// ------------------------------------------------------
+
 func (s *StdNetBind) Send(bufs [][]byte, endpoint Endpoint) error {
 	s.mu.Lock()
 	blackhole := s.blackhole4

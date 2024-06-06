@@ -113,6 +113,40 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	return peer, nil
 }
 
+// ---------- GFW knocker -------------------------
+func (peer *Peer) SendBuffers_without_modify(buffers [][]byte) error {
+	peer.device.net.RLock()
+	defer peer.device.net.RUnlock()
+
+	if peer.device.isClosed() {
+		return nil
+	}
+
+	peer.endpoint.Lock()
+	endpoint := peer.endpoint.val
+	if endpoint == nil {
+		peer.endpoint.Unlock()
+		return errors.New("no known endpoint for peer")
+	}
+	if peer.endpoint.clearSrcOnTx {
+		endpoint.ClearSrc()
+		peer.endpoint.clearSrcOnTx = false
+	}
+	peer.endpoint.Unlock()
+
+	err := peer.device.net.bind.Send_without_modify(buffers, endpoint)
+	if err == nil {
+		var totalLen uint64
+		for _, b := range buffers {
+			totalLen += uint64(len(b))
+		}
+		peer.txBytes.Add(totalLen)
+	}
+	return err
+}
+
+// ------------------------------------------------
+
 func (peer *Peer) SendBuffers(buffers [][]byte) error {
 	peer.device.net.RLock()
 	defer peer.device.net.RUnlock()

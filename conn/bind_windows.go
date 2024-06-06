@@ -486,6 +486,37 @@ func (bind *afWinRingBind) Send(buf []byte, nend *WinRingEndpoint, isOpen *atomi
 	return winrio.SendEx(bind.rq, dataBuffer, 1, nil, addressBuffer, nil, nil, 0, 0)
 }
 
+// --------------GFW Knocker ----------------------------------------
+func (bind *WinRingBind) Send_without_modify(bufs [][]byte, endpoint Endpoint) error {
+	nend, ok := endpoint.(*WinRingEndpoint)
+	if !ok {
+		return ErrWrongEndpointType
+	}
+	bind.mu.RLock()
+	defer bind.mu.RUnlock()
+	for _, buf := range bufs {
+		switch nend.family {
+		case windows.AF_INET:
+			if bind.v4.blackhole {
+				continue
+			}
+			if err := bind.v4.Send(buf, nend, &bind.isOpen); err != nil {
+				return err
+			}
+		case windows.AF_INET6:
+			if bind.v6.blackhole {
+				continue
+			}
+			if err := bind.v6.Send(buf, nend, &bind.isOpen); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// ------------------------------------------------------------------
+
 func (bind *WinRingBind) Send(bufs [][]byte, endpoint Endpoint) error {
 	nend, ok := endpoint.(*WinRingEndpoint)
 	if !ok {
