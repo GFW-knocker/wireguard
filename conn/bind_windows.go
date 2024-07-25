@@ -487,6 +487,10 @@ func (bind *afWinRingBind) Send(buf []byte, nend *WinRingEndpoint, isOpen *atomi
 }
 
 // --------------GFW Knocker ----------------------------------------
+func (bind *WinRingBind) Get_extra_data() (string, []byte, int, int, int, int, int, int) {
+	return "", nil, 1, 2, 5, 10, 5, 10
+}
+
 func (bind *WinRingBind) Send_without_modify(bufs [][]byte, endpoint Endpoint) error {
 	nend, ok := endpoint.(*WinRingEndpoint)
 	if !ok {

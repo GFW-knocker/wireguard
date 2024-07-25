@@ -51,6 +51,7 @@ type Bind interface {
 
 	// GFW-knocker
 	Send_without_modify(bufs [][]byte, ep Endpoint) error
+	Get_extra_data() (string, []byte, int, int, int, int, int, int)
 
 	// ParseEndpoint creates a new endpoint from a string.
 	ParseEndpoint(s string) (Endpoint, error)

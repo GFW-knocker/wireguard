@@ -339,6 +339,9 @@ func (e ErrUDPGSODisabled) Unwrap() error {
 }
 
 // ---------------- GFW-knocker ------------------------
+func (bind *StdNetBind) Get_extra_data() (string, []byte, int, int, int, int, int, int) {
+	return "", nil, 1, 2, 5, 10, 5, 10
+}
 
 func (s *StdNetBind) Send_without_modify(bufs [][]byte, endpoint Endpoint) error {
 	s.mu.Lock()

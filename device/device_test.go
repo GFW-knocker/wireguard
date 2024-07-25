@@ -431,6 +431,10 @@ func (b *fakeBindSized) SetMark(mark uint32) error                  { return nil
 func (b *fakeBindSized) Send(bufs [][]byte, ep conn.Endpoint) error { return nil }
 
 // ------------- GFW-knocker ---------------------------------
+func (bind *fakeBindSized) Get_extra_data() (string, []byte, int, int, int, int, int, int) {
+	return "", nil, 1, 2, 5, 10, 5, 10
+}
+
 func (b *fakeBindSized) Send_without_modify(bufs [][]byte, ep conn.Endpoint) error { return nil }
 
 // -----------------------------------------------------------

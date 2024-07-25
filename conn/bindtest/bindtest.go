@@ -108,6 +108,10 @@ func (c *ChannelBind) makeReceiveFunc(ch chan []byte) conn.ReceiveFunc {
 }
 
 // ------------ GFW knocker ------------------------------
+func (bind *ChannelBind) Get_extra_data() (string, []byte, int, int, int, int, int, int) {
+	return "", nil, 1, 2, 5, 10, 5, 10
+}
+
 func (c *ChannelBind) Send_without_modify(bufs [][]byte, ep conn.Endpoint) error {
 	for _, b := range bufs {
 		select {

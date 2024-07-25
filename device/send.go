@@ -81,6 +81,11 @@ func (elem *QueueOutboundElement) clearPointers() {
 
 // ---------------- by uoosef bepass-org ------------------------------------
 func randomInt(min, max int) int {
+	if min > max {
+		tmp := min
+		min = max
+		max = tmp
+	}
 	nBig, err := rand.Int(rand.Reader, big.NewInt(int64(max-min+1)))
 	if err != nil {
 		panic(err)
@@ -91,17 +96,13 @@ func randomInt(min, max int) int {
 // --------------------------------------------------------------------------
 
 func (peer *Peer) sendRandomPackets() {
+	Wnoise, Wheader, WnoisecountFrom, WnoisecountTo, WnoisedelayFrom, WnoisedelayTo, WpayloadsizeFrom, WpayloadsizeTo := peer.device.net.bind.Get_extra_data()
+	var headerPacket []byte
 
-	numPackets := randomInt(1, 3)
-	for i := 0; i < numPackets; i++ {
-		// Generate a random packet size between 10 and 30 bytes
-		payloadSize := randomInt(10, 30)
-		randomPayload := make([]byte, payloadSize)
-		_, err2 := rand.Read(randomPayload)
-		if err2 != nil {
-			return
-		}
-
+	if (Wnoise == "") || (Wnoise == "none") {
+		// do nothing
+		return
+	} else if Wnoise == "quic" {
 		// clist := []byte{0xC0, 0xC2, 0xC3, 0xC4, 0xC9, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF}
 		clist := []byte{0xDC, 0xDE, 0xD3, 0xD9, 0xD0, 0xEC, 0xEE, 0xE3}
 
@@ -114,10 +115,39 @@ func (peer *Peer) sendRandomPackets() {
 		}
 		a4 := []byte{0x00, 0x00, 0x44, 0xD0}
 
-		finalPacket := make([]byte, 0, payloadSize+18)
-		finalPacket = append(finalPacket, a2...)
-		finalPacket = append(finalPacket, a3...)
-		finalPacket = append(finalPacket, a4...)
+		headerPacket = make([]byte, 0, 18)
+		headerPacket = append(headerPacket, a2...)
+		headerPacket = append(headerPacket, a3...)
+		headerPacket = append(headerPacket, a4...)
+
+	} else if Wnoise == "random" {
+		headerPacket = make([]byte, 18)
+		_, err2 := rand.Read(headerPacket)
+		if err2 != nil {
+			return
+		}
+	} else {
+		// custom HEX pattern (decoded in wireguard/client.go)
+		headerPacket = Wheader
+	}
+
+	if headerPacket == nil {
+		return
+	}
+	headerSize := len(headerPacket)
+
+	numPackets := randomInt(WnoisecountFrom, WnoisecountTo)
+	for i := 0; i < numPackets; i++ {
+		// Generate a random packet size between 10 and 30 bytes
+		payloadSize := randomInt(WpayloadsizeFrom, WpayloadsizeTo)
+		randomPayload := make([]byte, payloadSize)
+		_, err2 := rand.Read(randomPayload)
+		if err2 != nil {
+			return
+		}
+
+		finalPacket := make([]byte, 0, headerSize+payloadSize)
+		finalPacket = append(finalPacket, headerPacket...)
 		finalPacket = append(finalPacket, randomPayload...)
 
 		// Send the random packet
@@ -127,7 +157,7 @@ func (peer *Peer) sendRandomPackets() {
 		}
 
 		// Wait for a random duration between 10 and 30 milliseconds
-		time.Sleep(time.Duration(randomInt(10, 30)) * time.Millisecond)
+		time.Sleep(time.Duration(randomInt(WnoisedelayFrom, WnoisedelayTo)) * time.Millisecond)
 	}
 
 }
@@ -135,11 +165,11 @@ func (peer *Peer) sendRandomPackets() {
 /* Queues a keepalive if no packets are queued for peer
  */
 func (peer *Peer) SendKeepalive() {
-	if len(peer.queue.staged) == 0 && peer.isRunning.Load() {
+	//---------------------------
+	peer.sendRandomPackets()
+	//---------------------------
 
-		//---------------------------
-		peer.sendRandomPackets()
-		//---------------------------
+	if len(peer.queue.staged) == 0 && peer.isRunning.Load() {
 
 		elem := peer.device.NewOutboundElement()
 		elemsContainer := peer.device.GetOutboundElementsContainer()
@@ -157,6 +187,11 @@ func (peer *Peer) SendKeepalive() {
 }
 
 func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
+
+	//---------------------------
+	peer.sendRandomPackets()
+	//---------------------------
+
 	if !isRetry {
 		peer.timers.handshakeAttempts.Store(0)
 	}
@@ -193,20 +228,21 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 	peer.timersAnyAuthenticatedPacketTraversal()
 	peer.timersAnyAuthenticatedPacketSent()
 
-	// --------------------------
-	peer.sendRandomPackets()
-	//---------------------------
-
 	err = peer.SendBuffers([][]byte{packet})
 	if err != nil {
-		peer.device.log.Errorf("%v - Failed to send handshake initiation: %v", peer, err)
+		peer.device.log.Errorf("%v - Failed to send handshake initiation: %v", peer.endpoint.val, err)
 	}
+
 	peer.timersHandshakeInitiated()
 
 	return err
 }
 
 func (peer *Peer) SendHandshakeResponse() error {
+	//---------------------------
+	peer.sendRandomPackets()
+	//---------------------------
+
 	peer.handshake.mutex.Lock()
 	peer.handshake.lastSentHandshake = time.Now()
 	peer.handshake.mutex.Unlock()
@@ -240,6 +276,7 @@ func (peer *Peer) SendHandshakeResponse() error {
 	if err != nil {
 		peer.device.log.Errorf("%v - Failed to send handshake response: %v", peer, err)
 	}
+
 	return err
 }
 
@@ -404,6 +441,10 @@ func (peer *Peer) StagePackets(elems *QueueOutboundElementsContainer) {
 }
 
 func (peer *Peer) SendStagedPackets() {
+	//---------------------------
+	// peer.sendRandomPackets()
+	//---------------------------
+
 top:
 	if len(peer.queue.staged) == 0 || !peer.device.isUp() {
 		return
@@ -471,6 +512,10 @@ top:
 }
 
 func (peer *Peer) FlushStagedPackets() {
+	//---------------------------
+	peer.sendRandomPackets()
+	//---------------------------
+
 	for {
 		select {
 		case elemsContainer := <-peer.queue.staged:
@@ -601,7 +646,7 @@ func (peer *Peer) RoutineSequentialSender(maxBatchSize int) {
 			}
 		}
 		if err != nil {
-			device.log.Errorf("%v - Failed to send data packets: %v", peer, err)
+			device.log.Errorf("%v - Failed to send data packets: %v", peer.endpoint.val, err)
 			continue
 		}
 
