@@ -102,12 +102,17 @@ func (peer *Peer) sendRandomPackets() {
 	if (Wnoise == "") || (Wnoise == "none") {
 		// do nothing
 		return
-	} else if Wnoise == "quic" {
+	} else if (Wnoise == "quic") || (Wnoise == "quicv1") {
 		// clist := []byte{0xC0, 0xC2, 0xC3, 0xC4, 0xC9, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF}
 		clist := []byte{0xDC, 0xDE, 0xD3, 0xD9, 0xD0, 0xEC, 0xEE, 0xE3}
 
+		aver := []byte{0x6B, 0x33, 0x43, 0xCF}
+		if Wnoise == "quicv1" {
+			aver = []byte{0x00, 0x00, 0x00, 0x01}
+		}
+
 		a1 := clist[randomInt(0, len(clist)-1)]
-		a2 := []byte{a1, 0x00, 0x00, 0x00, 0x01, 0x08}
+		a2 := []byte{a1, aver[0], aver[1], aver[2], aver[3], 0x08}
 		a3 := make([]byte, 8)
 		_, err3 := rand.Read(a3)
 		if err3 != nil {
