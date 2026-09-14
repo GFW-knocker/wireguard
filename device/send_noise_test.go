@@ -132,6 +132,72 @@ func TestQuicNoiseVersion(t *testing.T) {
 	}
 }
 
+func TestQuicInitNoise(t *testing.T) {
+	// "quicinit" must emit a complete, structurally valid 1200-byte QUIC v2
+	// client Initial. All three of size, first byte and version are what make
+	// the prime work, so all three are asserted.
+	peer, bind := noisePeer(t, "quicinit", nil)
+	peer.sendRandomPackets()
+
+	pkts := bind.packets()
+	if len(pkts) == 0 {
+		t.Fatal("no noise packet sent")
+	}
+	p := pkts[0]
+	// Wpayloadsize (5 in the test bind) must not be appended to it.
+	if len(p) != quicInitSize {
+		t.Fatalf("length = %d, want %d", len(p), quicInitSize)
+	}
+	if p[0]&0xF0 != 0xC0 {
+		t.Errorf("first byte = %#x, want 0xc0-0xcf (long header, Initial)", p[0])
+	}
+	if got := hex.EncodeToString(p[1:5]); got != "6b3343cf" {
+		t.Errorf("version = %s, want 6b3343cf (QUIC v2)", got)
+	}
+	if p[5] != 8 {
+		t.Errorf("DCID length = %#x, want 0x08", p[5])
+	}
+	if p[14] != 8 {
+		t.Errorf("SCID length = %#x, want 0x08", p[14])
+	}
+	if p[23] != 0x00 {
+		t.Errorf("token length = %#x, want 0x00", p[23])
+	}
+	if got := hex.EncodeToString(p[24:26]); got != "4400" {
+		t.Errorf("length varint = %s, want 4400", got)
+	}
+}
+
+func TestQuicInitNoiseVaries(t *testing.T) {
+	// Every datagram is rebuilt, so two bursts must not be the same bytes: a
+	// constant connection ID would itself be something to match on.
+	peer, bind := noisePeer(t, "quicinit", nil)
+	for i := 0; i < 8; i++ {
+		peer.sendRandomPackets()
+	}
+	pkts := bind.packets()
+	if len(pkts) < 2 {
+		t.Fatalf("sent %d packets, want at least 2", len(pkts))
+	}
+	seen := map[string]bool{}
+	for _, p := range pkts {
+		// the DCID, which a real client re-rolls per connection
+		seen[hex.EncodeToString(p[6:14])] = true
+		if len(p) != quicInitSize {
+			t.Fatalf("length = %d, want %d", len(p), quicInitSize)
+		}
+		if p[0]&0xF0 != 0xC0 {
+			t.Fatalf("first byte = %#x, want 0xc0-0xcf", p[0])
+		}
+		if got := hex.EncodeToString(p[1:5]); got != "6b3343cf" {
+			t.Fatalf("version drifted to %s", got)
+		}
+	}
+	if len(seen) != len(pkts) {
+		t.Errorf("%d distinct connection IDs over %d packets, want all distinct", len(seen), len(pkts))
+	}
+}
+
 func TestQuicNoiseFirstByteSpread(t *testing.T) {
 	// The first byte is a random pick from clist; make sure both families
 	// still appear and the version stays fixed across picks.

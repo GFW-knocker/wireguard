@@ -95,13 +95,67 @@ func randomInt(min, max int) int {
 
 // --------------------------------------------------------------------------
 
+// quicInitSize is the length of a "quicinit" noise datagram. RFC 9000 14.1
+// requires a client Initial to be padded to at least 1200 bytes, and that
+// turns out to be load-bearing rather than cosmetic: measured against
+// Cloudflare edges from a filtered path, a 1200-byte prime let the following
+// handshake through 10/10, 1100 bytes 4/10, and anything at or below 1000
+// bytes 0-3/10. The classifier only files a flow as QUIC on a datagram that
+// could actually be a conformant Initial.
+const quicInitSize = 1200
+
+// quicInitVersion is QUIC v2 (RFC 9369), the same version the "quic" preset
+// puts in its 18-byte header.
+var quicInitVersion = []byte{0x6B, 0x33, 0x43, 0xCF}
+
+// makeQuicInitPacket builds a complete, structurally valid QUIC v2 client
+// Initial of quicInitSize bytes, with a random payload where the CRYPTO frames
+// would be. It decrypts to nothing, which is fine: no peer is meant to answer
+// it. Unlike the other presets this is a whole packet, so Wpayloadsize does
+// not apply to it, and one datagram is enough.
+//
+// Two fields are load-bearing and were isolated by ablation against a
+// Cloudflare edge, holding everything else constant:
+//
+//   - The first byte must be in 0xc0-0xcf, the long-header Initial encoding.
+//     0xc0, 0xc3 and 0xcf each primed the flow 10/10; 0xd0 and 0xf0 gave 0/10,
+//     and the bytes the "quic" preset draws from (0xdc, 0xee, ...) gave 1-3/10.
+//     Note this is the *v1* meaning of the type bits even though the version
+//     says v2, where 0b00 would be Retry. The classifier is matching the v1
+//     encoding, not honouring RFC 9369's remap.
+//   - The version must not be v1 or a draft. v2 and a reserved value both gave
+//     10/10; draft-29 and v1 both gave 0/10.
+//
+// Padding content, SCID length and the length varint made no difference
+// (10/10 either way), so they are filled the way a real client would.
+//
+// Returns nil if the entropy pool cannot be read, and the caller then sends
+// nothing rather than sending a malformed prime.
+func makeQuicInitPacket() []byte {
+	p := make([]byte, quicInitSize)
+	if _, err := rand.Read(p); err != nil {
+		return nil
+	}
+	p[0] = 0xC0 | (p[0] & 0x0F) // long header, Initial; low nibble is free
+	copy(p[1:5], quicInitVersion)
+	p[5] = 8     // DCID length, bytes 6..13 stay random
+	p[14] = 8    // SCID length, bytes 15..22 stay random
+	p[23] = 0x00 // token length
+	p[24], p[25] = 0x44, 0x00
+	return p
+}
+
 func (peer *Peer) sendRandomPackets() {
 	Wnoise, Wheader, WnoisecountFrom, WnoisecountTo, WnoisedelayFrom, WnoisedelayTo, WpayloadsizeFrom, WpayloadsizeTo := peer.device.net.bind.Get_extra_data()
 	var headerPacket []byte
+	isQuicInit := false
 
 	if (Wnoise == "") || (Wnoise == "none") {
 		// do nothing
 		return
+	} else if Wnoise == "quicinit" {
+		// a whole 1200-byte packet, rebuilt per datagram in the loop below
+		isQuicInit = true
 	} else if (Wnoise == "quic") || (Wnoise == "quicv1") {
 		// clist := []byte{0xC0, 0xC2, 0xC3, 0xC4, 0xC9, 0xCB, 0xCC, 0xCD, 0xCE, 0xCF}
 		clist := []byte{0xDC, 0xDE, 0xD3, 0xD9, 0xD0, 0xEC, 0xEE, 0xE3}
@@ -136,24 +190,35 @@ func (peer *Peer) sendRandomPackets() {
 		headerPacket = Wheader
 	}
 
-	if headerPacket == nil {
+	if !isQuicInit && headerPacket == nil {
 		return
 	}
 	headerSize := len(headerPacket)
 
 	numPackets := randomInt(WnoisecountFrom, WnoisecountTo)
 	for i := 0; i < numPackets; i++ {
-		// Generate a random packet size between 10 and 30 bytes
-		payloadSize := randomInt(WpayloadsizeFrom, WpayloadsizeTo)
-		randomPayload := make([]byte, payloadSize)
-		_, err2 := rand.Read(randomPayload)
-		if err2 != nil {
-			return
-		}
+		var finalPacket []byte
 
-		finalPacket := make([]byte, 0, headerSize+payloadSize)
-		finalPacket = append(finalPacket, headerPacket...)
-		finalPacket = append(finalPacket, randomPayload...)
+		if isQuicInit {
+			// A fixed-size whole packet: Wpayloadsize does not apply, and the
+			// random parts are re-rolled for every datagram.
+			finalPacket = makeQuicInitPacket()
+			if finalPacket == nil {
+				return
+			}
+		} else {
+			// Generate a random packet size between 10 and 30 bytes
+			payloadSize := randomInt(WpayloadsizeFrom, WpayloadsizeTo)
+			randomPayload := make([]byte, payloadSize)
+			_, err2 := rand.Read(randomPayload)
+			if err2 != nil {
+				return
+			}
+
+			finalPacket = make([]byte, 0, headerSize+payloadSize)
+			finalPacket = append(finalPacket, headerPacket...)
+			finalPacket = append(finalPacket, randomPayload...)
+		}
 
 		// Send the random packet
 		err1 := peer.SendBuffers_without_modify([][]byte{finalPacket})
